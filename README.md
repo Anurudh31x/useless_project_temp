@@ -6,30 +6,29 @@
 
 
 ## Basic Details
-### Team Name: [Name]
+### Team Name: [Amigos]
 
 
 ### Team Members
-- Team Lead: [Name] - [College]
-- Member 2: [Name] - [College]
-- Member 3: [Name] - [College]
+- Team Lead: [T.S.Anurudh] - [Ahalia school of engineering and technology]
+- Member 2: [Kishore.K] - [Ahalia school of engineering and technology]
 
 ### Project Description
-[2-3 lines about what your project does]
+[a fun browser based game where a talking trash can collects waste and responds with hilarious roasts.Toss garbage into the bin and earn points and enjoy witty comments that make cleaning up entertaining]
 
 ### The Problem (that doesn't exist)
-[What ridiculous problem are you solving?]
+[many people find learning about waste management boring and unengaging trash talk bin makes waste disposal fun by using humor and interactive gameplay to encourage cleaner habits]
 
 ### The Solution (that nobody asked for)
-[How are you solving it? Keep it fun!]
+[i solved this problem by creating an interactive game where user dispose waste in virtual trash bin]
 
 ## Technical Details
 ### Technologies/Components Used
 For Software:
-- [Languages used]
-- [Frameworks used]
-- [Libraries used]
-- [Tools used]
+- [html]
+- [css]
+- [java script]
+- [HTML5,CSS3,JavascriptES6),Visual studio code,github]
 
 For Hardware:
 - [List main components]
@@ -39,10 +38,23 @@ For Hardware:
 ### Implementation
 For Software:
 # Installation
-[commands]
+[### Implementation
+For Software:
+
+# Installation
+[```bash
+# Clone the repository
+git clone [https://github.com/your-username/your-repo-name.git](https://github.com/your-username/your-repo-name.git)
+
+# Navigate into the project directory
+cd your-repo-name
+
+# Install required dependencies
+pip install -r requirements.txt]
 
 # Run
-[commands]
+[Execute the application
+python main.py]
 
 ### Project Documentation
 For Software:

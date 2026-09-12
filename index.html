@@ -1,338 +1,2076 @@
-# Trash Cleanup Game — Project Details & Full Reference
-
-**File:** `/home/user/index.html`
-**Type:** Single self-contained HTML file (no external assets, libraries, or CDNs)
-**Size:** 1,657 lines
-**Structure:** All CSS inside `<style>` (lines 7–1012), all JS inside `<script>` (lines 1034–1655), static HTML shell at lines 1014–1033
-**Title:** `Trash Cleanup Game 🌿`
-**Viewport:** `width=device-width, initial-scale=1.0, user-scalable=no`
-
----
-
-## 1. Project History & Original Problem
-
-The starting file (`trashcanfinaldraft (Copy).html`) was a basic flat HTML game:
-- Solid dark background, flat blue rectangle bin (emoji block 🗑️)
-- Trash items were plain emoji in flat red boxes
-- Basic `mousedown`/`touchstart` drag with clunky clamping
-- Score counter plain text, `alert()` for winning
-- No animations, no particles, no depth — felt like a demo, not a game
-
-### Original 17 Requirements
-1. Cartoon/3D visual style, gradients, lighting, depth, gloss, eco theme
-2. Park/street environment: dark blue-green bg, trees, bushes, pavement, leaves, layered depth
-3. 3D trash can: lid, rim, handles, wheels, recycling symbol, highlights, ground shadow
-4. Bin idle bob + glow pulse; lid opens when trash is near; happy bounce + sparkles on collect
-5. 10 trash types (🍌🥫📄🧴🍫🥤📦📰🍾🥡), varied size/rotation/position, depth
-6. Spawn animation: fall + rotate + land bounce
-7. Idle animation: random subtle wobble per item
-8. Drag: scale up, stronger shadow, z-front, smooth, touch + scroll prevention
-9. Collection: fly to bin → shrink → rotate → disappear → particles → lid close → bounce → "+1" → popup
-10. Particles: green sparkles, dust, floating leaves, bin glow, celebration on win
-11. Score HUD: glass pill, recycling icon, glowing border, number animation
-12. Buttons: gradient 3D, hover lift, press-down, glow, icon + text
-13. Win screen: custom overlay (not alert), "Environment Cleaned! 🌱", score, particles, Play Again
-14. Mobile responsive, pointer events, no scroll-while-drag
-15. Performance: no heavy libraries, CSS animations, no leaks
-16. Single file, inline CSS/JS, clear comments
-17. Extra polish: smooth transitions, cubic-bezier easing, micro-interactions, prefers-reduced-motion
-
----
-
-## 2. HTML — Static Shell (only 4 elements; everything else is JS-built)
-
-| Element | Content |
-|---------|---------|
-| `<h1 class="game-title">` | `🌿 Trash Cleanup Game 🌍` |
-| `<div id="game-container">` | empty; JS renders everything inside |
-| `<div id="game-controls">` | 2 buttons |
-| `<button class="game-btn primary" id="new-game">` | `🔄 New Game` |
-| `<button class="game-btn secondary" id="add-trash">` | `➕ Add More Trash` |
-| `<div id="mobile-instructions">` | `Tap & drag trash to the bin 🗑️` |
-
----
-
-## 3. CSS Variables (`:root`)
-
-```
---sky-top #0b1628  --sky-mid #122444  --sky-bot #1a3a5c
---ground #2d5a3d   --ground-dark #1e3f2b
---pavement #5a6b7a --pavement-light #7a8d9e
---accent #4cc9f8   --accent-glow rgba(76,201,248,0.6)
---green #5cdb5c    --green-dark #2a9d2a
---gold #ffd700
---bin-primary #2196F3  --bin-dark #1565C0
---bin-light #42A5F5   --bin-highlight #64B5F6
---bin-lid #1976D2     --bin-lid-light #42A5F5
-```
-
-Global reset: `box-sizing: border-box; margin: 0; padding: 0` on all elements and pseudo-elements.
-
----
-
-## 4. Key CSS Rules
-
-- **body:** font `'Segoe UI', system-ui, -apple-system, sans-serif`; background `linear-gradient(170deg, #060d1a, #0b1628, #122444)`; flex column centered; `min-height: 100vh; overflow: hidden; padding: 10px`; `user-select: none`
-- **prefers-reduced-motion:** all animations `0.01ms`, iteration-count 1, transitions `0.01ms` (accessibility)
-- **.game-title:** `font-size: clamp(1.2rem, 3vw, 1.8rem)`, weight 800; gradient text (accent → green → #a8e6a0); drop-shadow accent 0.3
-- **#game-container:** `max-width: 640px; width: 100%; height: 72vh; min-height: 420px; border-radius: 20px; overflow: hidden; border: 2px solid accent(0.25)`; shadow `0 0 40px glow .15, 0 8px 32px black .5, inset 0 1px 0 white .05`; `touch-action: none`
-- **Sky** (`::before`): 10-stop vertical gradient `#0d1b2a → #1b2838 → #1a3a5c → #1e4d6e → #2a6041 → #2d5a3d → #3d6b4a → #4a7a56 → #5a8a62 → #4a7a56`
-- **Stars:** 30× white dots 1–3px, top 0–45%, left 0–100%, twinkle 2–5s
-- **Moon:** `top: 8%; right: 12%`, 36px, radial `#fffde7 → #fdd835 → #f9a825` + glow
-- **Trees:** 4 at left 5%, 15%, 78%, 90%; trunk 8px wide; canopy radial green ellipse
-- **Bushes:** 4; ground/pavement height 42% of container
-- **Pavement:** grout-line texture via two `repeating-linear-gradient`s + 3 radial cobblestone highlights
-- **Atmosphere:** radial accent 0.03 haze overlay
-- **Floating bg leaves:** 6× 🍃🍂🌿, opacity 0.25, float 8–20s, delay 0–10s
-
----
-
-## 5. Z-Index Layer Map (low → high)
-
-```
- 0    #game-container::before (sky)
- 1    .stars
- 2    .moon, .tree-bg
- 3    .atmosphere, .bush
- 4    .ground
- 5    .bg-leaf, .trash-item
- 10   #trash-can-wrapper (+ all bin parts)
- 50   .particle
- 80   #thank-you-popup
- 100  #score-hud
- 200  .float-score
- 500  #win-overlay
- 999  .trash-item.dragging
-```
-
----
-
-## 6. Score HUD (z-index 100)
-
-- `top: 12px; right: 12px`; glass background `rgba(10, 20, 40, .55)` + `backdrop-filter: blur(12px)`; pill radius 30px; border accent(0.2)
-- `.score-icon` ♻️; `#score-value` accent color 1.3rem weight 800
-- `.bump` → score value scales to 1.4 (300ms)
-- `.score-pulse` → whole HUD scales to 1.15 (300ms)
-- Separator `/`; `#score-goal` = 10
-- `.float-score`: "+1" green 1.4rem; keyframe `floatUp` 1s (Y 0 → -40 scale 1.2 → -80 scale 1, fades out)
-
----
-
-## 7. Trash Can (wrapper z-index 10)
-
-- **Position:** `bottom: 5%; left: 50%; transform: translateX(-50%)`; drop-shadow black
-- **.near-trash** → adds accent glow drop-shadow (when trash dragged close)
-- **.idle** → `idleBob` 4s (Y 0 ↔ -4px bobbing)
-- **.bounce** → `binBounce` 0.5s cubic-bezier(.34,1.56,.64,1) (Y 0 → -12 rot -2° → -4 rot 1° → -8 → 0)
-- **::before ground glow** → `binGlow` 3s ellipse pulse (opacity 0.4 ↔ 0.8, scaleX 1 ↔ 1.1)
-- **Body `#trash-can`:** 110×130px, radius 8/8/18/18, blue gradient + 3 inset shadows, 2 vertical panel lines at 25%/75%
-- **Parts:**
-  - `.bin-highlight` — white plastic streak (18×60%), left top
-  - `.recycle-symbol` ♻ — centered, 2rem, 25% opacity
-  - `.bin-handle` — 8×24px tabs, left `-6px` / right `+6px`
-  - `.bin-wheel` — 2× 14px dark circles at bottom
-  - `.bin-lid` — top -16px, height 20px, width `calc(100% + 10px)`, `transform-origin: left bottom`; `.open` → `rotate(-55deg) translateY(-6px)` (both 0.4s cubic-bezier .34,1.56,.64,1)
-  - `.bin-lid-knob` — 30×6px rounded bar above lid
-  - `.bin-opening` — dark slit `#0a1a2a`, 12px tall, fades in via `~` selector when lid open
-
----
-
-## 8. Trash Items (z-index 5)
-
-- **.trash-inner:** 100% box, radius 12px, `font-size: 1.8rem`, shadow `0 4px 12px black .35`; `::after` gloss highlight top-left 40%×30% white(0.15)
-- **States:**
-  - `.spawning` → `trashSpawn` 0.6s cubic-bezier(.34,1.56,.64,1): Y -80 scale .3 rot 30° → Y 10 scale 1.05 rot -5° → Y -5 scale .98 rot 2° → rot `var(--rot)`
-  - `.idle-wobble` → `idleWobble` `var(--wobble-dur, 3–6s)` infinite, ±2° rotation, ±2px Y
-  - `.dragging` → `z-index: 999 !important; transition: none !important`; inner scales 1.2, rotates -5°, shadow `0 12px 30px black .5` + accent glow
-  - `.collecting` → `trashCollect` 0.5s cubic-bezier(.55,.085,.68,.53): scale → 0.6 (+ rot 180°) → 0 (+ rot 360°), opacity → 0
-  - `.returning` → `trashReturn` 0.4s: scale 1.1 → 0.95 (rot 3°) → 1 (bounce-back on missed drop)
-
----
-
-## 9. Particles (z-index 50)
-
-- `.particle.green` — radial `#5cdb5c → #2a9d2a` + glow
-- `.particle.gold` — radial `#fff → #ffd700`
-- `.particle.leaf` — emoji 🍃✨💚
-- Keyframe `particleBurst` uses CSS vars `--px`/`--py` (cos/sin spread, distance 30–80px)
-
----
-
-## 10. Thank You Popup (z-index 80)
-
-- `bottom: 180px`, centered, `rgba(42, 157, 42, .85)` + blur(8px), pill, `white-space: nowrap`
-- `.show` → opacity 1 + translateY 0 (300ms ease)
-- Auto-hides after 900ms
-
----
-
-## 11. Buttons
-
-- `.game-btn`: padding 12×24px, radius 14px, weight 700, 0.25s cubic-bezier(.34,1.56,.64,1); `::before` gloss top half
-- `.primary` green gradient `#43e87c → #2a9d2a`
-- `.secondary` blue gradient `#5dd8f8 → #3a99b8`
-- **Hover:** translateY(-3px) scale(1.03) + stronger glow
-- **Active:** scale(0.97) press-down
-
----
-
-## 12. Mobile (media query ≤768px)
-
-- Show `#mobile-instructions`
-- Container: `60vh; min-height: 360px`
-- Trash item: 48×48px `!important`; inner font 1.4rem
-- Bin: 90×110px; lid height 16px, top -14px
-
----
-
-## 13. Win Overlay (z-index 500)
-
-- Full inset `rgba(5, 15, 30, .85)` + blur(8px), radius 20px
-- `.show` → opacity 1 + `.win-content` scale .7 → 1 (0.5s)
-- `.win-icon` 🌱 4rem, `winSpin` 2s
-- `.win-title` gradient text (green → accent → gold): "Environment Cleaned!"
-- `.win-subtitle`: "You made the park beautiful again"
-- `.win-score`: gold
-- `.win-btn`: green gradient, 14×36px, radius 16px, hover lift scale 1.05
-- `.win-particle`: falling emoji confetti, Y -20 → 500px, rotate 0 → 720°, removed after 6000ms
-
----
-
-## 14. CONFIG Object (exact values)
-
-```js
-WIN_SCORE: 10
-SPAWN_INTERVAL: 2200      // ms between auto spawns
-
-TRASH_ITEMS: [
-  🍌 Banana peel    #ffe082 → #f9a825 → #e8a000   52px
-  🥫 Soda can       #ef5350 → #c62828 → #b71c1c   44px
-  📄 Paper          #fafafa → #e0e0e0 → #bdbdbd   50px
-  🧴 Plastic bottle #81d4fa → #42a5f5 → #1e88e5   48px
-  🍫 Wrapper        #8d6e63 → #5d4037 → #3e2723   42px
-  🥤 Plastic cup    #ffab91 → #ff7043 → #e64a19   46px
-  📦 Cardboard      #bcaaa4 → #8d6e63 → #6d4c41   56px
-  📰 Newspaper      #e0e0e0 → #9e9e9e → #757575   50px
-  🍾 Glass bottle   #a5d6a7 → #66bb6a → #2e7d32   50px
-  🥡 Food container #fff9c4 → #fff176 → #fdd835   48px
-]
-
-FEEDBACK_MESSAGES: [
-  'Thank you! ✨', 'Great job! 🌟', 'Cleaned! 🧹', 'Awesome! 💚', 'Nice one! 👍',
-  'Eco-hero! 🌱', 'Spotless! ✨', 'Well done! 🌍', 'Brilliant! 💫', 'Keep going! 🎉'
-]
-```
-
----
-
-## 15. State Object
-
-```js
-state = {
-  score: 0,
-  isGameActive: false,
-  trashInterval: null,
-  trashItems: [],        // live .trash-item elements
-  activeDrag: null,      // ⚠ declared but NEVER used
-  animFrame: null        // ⚠ declared but NEVER used
-}
-```
-
----
-
-## 16. Functions (logic + exact timings)
-
-### Scene & Build
-- **buildScene()** — moon + 30 stars + 4 trees + 4 bushes + ground/pavement + atmosphere + 6 floating leaves
-- **buildTrashCan()** — creates bin wrapper (lid, knob, opening, body, handles, wheels)
-- **buildScoreHud()** — `♻  0 / 10`
-- **buildWinOverlay()** — title, subtitle, score, Play Again button (wired to reset + initGame)
-- **buildThankYouPopup()** — empty div
-
-### Particles
-- **spawnParticles(x, y, count, type='green')** — burst; leaf = 10px else 4–10px; distance 30–80px; element removed after 1000ms
-- **spawnWinParticles()** — 20 falling emojis from [🌱🌿🍃💚✨🌍♻️🎉]; removed after 6000ms
-
-### Score
-- **updateScore()** — score++ → `.bump` + `.score-pulse` (300ms) → floating "+1" at center, bottom 45% (1100ms) → random feedback message (900ms)
-- **showThankYou(msg)** — shows green pill 900ms (uses element-scoped `_timer` property; `clearTimeout` prevents stacking)
-
-### Spawning
-- **spawnTrash()** — random type; size randomized ±4px; rotation ±15deg; wobble duration 3–6s, delay 0–2s; spawns only in top 55% of container (avoids bin area); switches `.spawning` → `.idle-wobble` after 650ms
-
-### Drag & Drop (closure-based, no jitter)
-- **makeDraggable(el)** — local vars `startX/startY/origLeft/origTop/isDragging`; attaches `pointerdown` (passive:false) + `mousedown` fallback
-  - **onStart:** preventDefault; records pointer pos + element pos; adds `.dragging`, removes `.idle-wobble`, sets `animation: none`; registers document listeners: `pointermove{passive:false}`, `pointerup`, `pointercancel`, plus `mousemove` + `mouseup` fallback
-  - **onMove:** preventDefault; position = orig + delta (no jitter); clamps to container bounds; applies; calls `checkBinProximity`
-  - **onEnd:** removes all 5 document listeners; removes `.dragging`; drops on bin → `collectTrash`, otherwise `.returning` bounce (450ms) then resumes `.idle-wobble` (+100ms); calls `resetBinProximity`
-
-### Bin Interaction
-- **checkBinProximity(el)** — `hypot` of center distance; **< 150px** → bin `.near-trash` + lid `.open`
-- **resetBinProximity()** — restores `.idle`, closes lid
-- **isOverlappingBin(el)** — AABB hit-test with **+20px padding** on all bin sides
-
-### Collection
-- **collectTrash(el)** — full animated sequence (see timeline below)
-- **triggerWin()** — stops game (isGameActive = false, clearInterval); after 600ms shows overlay + confetti
-- **initGame()** — full teardown (`container.innerHTML = ''` → no memory leaks) → rebuild scene/bin/HUD/popup/overlay → spawn interval 2200ms → 3 initial trash at 300ms stagger
-
-### Buttons
-- **New Game** — `confirm('Restart the game?')` if score > 0 && active, then `initGame()`
-- **Add More Trash** — 3 spawns at 200ms stagger
-
-### Boot
-- `initGame()` called once at script end
-
----
-
-## 17. Collection Timeline (exact ms)
-
-```
-T+0ms     trash flies to bin center (transition 'all 0.35s cubic-bezier .55,.085,.68,.53'),
-          targetY = bin top + height/3, lid opens
-T+200ms   add .collecting (shrink + spin, 0.5s)
-T+550ms   front lid closes; bin .bounce; 8 green + 4 leaf particles at bin center;
-          item removed from DOM + state; updateScore(); win check
-T+1100ms  remove .bounce, restore .idle
-Score ≥ 10 → wait 600ms → win overlay + 20 confetti emoji
-```
-
----
-
-## 18. Implementation Quirks (remember when editing)
-
-1. `state.activeDrag` and `state.animFrame` are declared but unused
-2. Trash only spawns in the top 55% of the container
-3. Proximity lid-open threshold = 150px; drop hit-test = +20px padding AABB
-4. No listener leaks: drag listeners attach to `document` inside closures and are always removed on `onEnd`
-5. Only native dialog left in the game: `confirm()` on New Game reset
-6. Trash colors come from `CONFIG.TRASH_ITEMS` gradients; size/rotation/wobble randomized at spawn
-7. Mobile size override uses `!important` on trash items
-
----
-
-## 19. Remaining Gaps / Change Ideas
-
-- `confirm()` still used — could be replaced with a custom modal
-- No timer / level system / difficulty ramp (spawn interval is fixed at 2200ms)
-- No sound effects (completely silent)
-- No local storage / high score saving between sessions
-- Trash items can overlap each other; no spawn-collision check
-- Bin color hardcoded blue; no theme picker
-- `WIN_SCORE` hardcoded to 10; not adjustable in the UI
-- No pause / mute / settings menu
-- No per-type trash stats (e.g., "3 cans collected")
-
----
-
-## 20. How to Request Changes
-
-Reference any of the above by name when asking for edits. Examples:
-- "Raise WIN_SCORE to 15 and update #score-goal"
-- "Lower the proximity threshold from 150px to 100px"
-- "Swap bin blue for green (--bin-* variables)"
-- "Replace confirm() with a custom modal"
-- "Add a 30-second timer with difficulty ramp"
-- "Add collect/spawn sound effects"
-
-The game runs by opening `/home/user/index.html` in any browser.
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Trash Cleanup Game 🌿</title>
+    <style>
+        /* ============================================
+           CSS VARIABLES & RESET
+           ============================================ */
+        :root {
+            --sky-top: #0b1628;
+            --sky-mid: #122444;
+            --sky-bot: #1a3a5c;
+            --ground: #2d5a3d;
+            --ground-dark: #1e3f2b;
+            --pavement: #5a6b7a;
+            --pavement-light: #7a8d9e;
+            --accent: #4cc9f8;
+            --accent-glow: rgba(76, 201, 248, 0.6);
+            --green: #5cdb5c;
+            --green-dark: #2a9d2a;
+            --gold: #ffd700;
+            --bin-primary: #2196F3;
+            --bin-dark: #1565C0;
+            --bin-light: #42A5F5;
+            --bin-highlight: #64B5F6;
+            --bin-lid: #1976D2;
+            --bin-lid-light: #42A5F5;
+        }
+
+        *, *::before, *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        /* ============================================
+           BASE STYLING
+           ============================================ */
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background: linear-gradient(170deg, #060d1a 0%, #0b1628 40%, #122444 100%);
+            color: #e6e6e6;
+            margin: 0;
+            padding: 10px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+            overflow: hidden;
+            -webkit-user-select: none;
+            user-select: none;
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after {
+                animation-duration: 0.01ms !important;
+                animation-iteration-count: 1 !important;
+                transition-duration: 0.01ms !important;
+            }
+        }
+
+        /* ============================================
+           TITLE
+           ============================================ */
+        .game-title {
+            font-size: clamp(1.2rem, 3vw, 1.8rem);
+            font-weight: 800;
+            letter-spacing: 1px;
+            margin-bottom: 8px;
+            background: linear-gradient(135deg, var(--accent) 0%, var(--green) 50%, #a8e6a0 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            text-shadow: none;
+            filter: drop-shadow(0 2px 8px rgba(76, 201, 248, 0.3));
+            text-align: center;
+        }
+
+        /* ============================================
+           GAME CONTAINER — PARK SCENE
+           ============================================ */
+        #game-container {
+            position: relative;
+            width: 100%;
+            max-width: 640px;
+            height: 72vh;
+            min-height: 420px;
+            border-radius: 20px;
+            overflow: hidden;
+            box-shadow:
+                0 0 40px rgba(76, 201, 248, 0.15),
+                0 8px 32px rgba(0, 0, 0, 0.5),
+                inset 0 1px 0 rgba(255, 255, 255, 0.05);
+            border: 2px solid rgba(76, 201, 248, 0.25);
+            touch-action: none;
+        }
+
+        /* Sky layers */
+        #game-container::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background:
+                linear-gradient(180deg,
+                    #0d1b2a 0%,
+                    #1b2838 15%,
+                    #1a3a5c 35%,
+                    #1e4d6e 50%,
+                    #2a6041 55%,
+                    #2d5a3d 60%,
+                    #3d6b4a 65%,
+                    #4a7a56 75%,
+                    #5a8a62 85%,
+                    #4a7a56 100%
+                );
+            z-index: 0;
+        }
+
+        /* Stars */
+        .stars {
+            position: absolute;
+            inset: 0;
+            z-index: 1;
+        }
+
+        .star {
+            position: absolute;
+            background: white;
+            border-radius: 50%;
+            animation: twinkle 3s ease-in-out infinite alternate;
+        }
+
+        @keyframes twinkle {
+            0% { opacity: 0.2; }
+            100% { opacity: 0.8; }
+        }
+
+        /* Moon */
+        .moon {
+            position: absolute;
+            top: 8%;
+            right: 12%;
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            background: radial-gradient(circle at 35% 35%, #fffde7, #fdd835, #f9a825);
+            box-shadow:
+                0 0 20px rgba(253, 216, 53, 0.4),
+                0 0 60px rgba(253, 216, 53, 0.15);
+            z-index: 2;
+        }
+
+        .moon::after {
+            content: '';
+            position: absolute;
+            top: 4px;
+            left: 8px;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: rgba(200, 170, 50, 0.3);
+        }
+
+        /* Background trees */
+        .tree-bg {
+            position: absolute;
+            bottom: 40%;
+            z-index: 2;
+        }
+
+        .tree-bg .trunk {
+            position: absolute;
+            bottom: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 8px;
+            background: linear-gradient(90deg, #3d2b1f, #5a3e2b, #3d2b1f);
+            border-radius: 2px;
+        }
+
+        .tree-bg .canopy {
+            position: absolute;
+            bottom: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            border-radius: 50%;
+            background: radial-gradient(ellipse at 40% 40%, #2d6b3a, #1a4d28, #0f3318);
+            box-shadow: inset -5px -5px 15px rgba(0, 0, 0, 0.3);
+        }
+
+        /* Bushes */
+        .bush {
+            position: absolute;
+            bottom: 38%;
+            border-radius: 50% 50% 20% 20%;
+            background: radial-gradient(ellipse at 40% 30%, #2d7a3a, #1a5a28, #0f3d18);
+            box-shadow:
+                inset -3px -3px 8px rgba(0, 0, 0, 0.3),
+                0 2px 6px rgba(0, 0, 0, 0.3);
+            z-index: 3;
+        }
+
+        /* Ground / Pavement */
+        .ground {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 42%;
+            z-index: 4;
+        }
+
+        .ground::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 12px;
+            background: linear-gradient(180deg, #5a7a4a, #4a6a3a);
+        }
+
+        .pavement {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 100%;
+            background:
+                linear-gradient(180deg, #6a7a8a 0%, #5a6a7a 40%, #4a5a6a 100%);
+            border-top: 2px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .pavement::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background:
+                repeating-linear-gradient(
+                    90deg,
+                    transparent,
+                    transparent 80px,
+                    rgba(0,0,0,0.05) 80px,
+                    rgba(0,0,0,0.05) 82px
+                ),
+                repeating-linear-gradient(
+                    0deg,
+                    transparent,
+                    transparent 60px,
+                    rgba(0,0,0,0.03) 60px,
+                    rgba(0,0,0,0.03) 62px
+                );
+        }
+
+        /* Cobblestone texture */
+        .pavement::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background-image:
+                radial-gradient(circle at 20% 30%, rgba(255,255,255,0.03) 0%, transparent 30%),
+                radial-gradient(circle at 70% 60%, rgba(255,255,255,0.02) 0%, transparent 25%),
+                radial-gradient(circle at 50% 80%, rgba(0,0,0,0.04) 0%, transparent 20%);
+        }
+
+        /* Floating background leaves */
+        .bg-leaf {
+            position: absolute;
+            z-index: 5;
+            font-size: 10px;
+            opacity: 0.25;
+            pointer-events: none;
+            animation: floatLeaf linear infinite;
+        }
+
+        @keyframes floatLeaf {
+            0% { transform: translateY(0) translateX(0) rotate(0deg); opacity: 0; }
+            10% { opacity: 0.25; }
+            90% { opacity: 0.25; }
+            100% { transform: translateY(100vh) translateX(40px) rotate(360deg); opacity: 0; }
+        }
+
+        /* Atmospheric haze */
+        .atmosphere {
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(ellipse at 50% 30%, rgba(76, 201, 248, 0.03), transparent 70%);
+            z-index: 3;
+            pointer-events: none;
+        }
+
+        /* ============================================
+           SCORE HUD
+           ============================================ */
+        #score-hud {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            z-index: 100;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 18px 8px 14px;
+            border-radius: 30px;
+            background: rgba(10, 20, 40, 0.55);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(76, 201, 248, 0.2);
+            box-shadow:
+                0 4px 16px rgba(0, 0, 0, 0.3),
+                inset 0 1px 0 rgba(255, 255, 255, 0.05);
+            transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+
+        #score-hud.score-pulse {
+            transform: scale(1.15);
+        }
+
+        .score-icon {
+            font-size: 1.2rem;
+            filter: drop-shadow(0 0 4px rgba(92, 219, 92, 0.5));
+        }
+
+        #score-value {
+            font-size: 1.3rem;
+            font-weight: 800;
+            color: var(--accent);
+            text-shadow: 0 0 8px var(--accent-glow);
+            transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+            min-width: 20px;
+            text-align: center;
+        }
+
+        #score-value.bump {
+            transform: scale(1.4);
+        }
+
+        .score-separator {
+            color: rgba(255,255,255,0.2);
+            font-size: 0.8rem;
+        }
+
+        #score-denominator {
+            font-size: 0.85rem;
+            color: rgba(255,255,255,0.4);
+            font-weight: 600;
+        }
+
+        /* Uselessness counter HUD */
+        #useless-hud {
+            position: absolute;
+            top: 12px;
+            left: 12px;
+            z-index: 100;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 14px 8px 12px;
+            border-radius: 30px;
+            background: rgba(10, 20, 40, 0.55);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 120, 60, 0.2);
+            box-shadow:
+                0 4px 16px rgba(0, 0, 0, 0.3),
+                inset 0 1px 0 rgba(255, 255, 255, 0.05);
+            font-size: 0.8rem;
+        }
+
+        #useless-label {
+            color: rgba(255,255,255,0.45);
+            font-weight: 700;
+            letter-spacing: 1px;
+        }
+
+        #useless-value {
+            color: #ff9a5c;
+            font-weight: 800;
+            min-width: 56px;
+            text-align: right;
+            font-size: 1rem;
+        }
+
+        #useless-level {
+            color: #ffd700;
+            font-weight: 800;
+            letter-spacing: 1px;
+            font-size: 0.75rem;
+        }
+
+        #useless-value.glitch {
+            animation: glitch 0.5s steps(2) infinite;
+        }
+
+        @keyframes glitch {
+            0% { text-shadow: 2px 0 #f33, -2px 0 #0ff; transform: translateX(-1px); }
+            50% { text-shadow: -2px 0 #f33, 2px 0 #0ff; transform: translateX(1px); }
+            100% { text-shadow: 2px 0 #f33, -2px 0 #0ff; transform: translateX(-1px); }
+        }
+
+        /* Floating +1 indicator */
+        .float-score {
+            position: absolute;
+            z-index: 200;
+            font-size: 1.4rem;
+            font-weight: 800;
+            color: var(--green);
+            text-shadow: 0 0 10px rgba(92, 219, 92, 0.6);
+            pointer-events: none;
+            animation: floatUp 1s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+        }
+
+        @keyframes floatUp {
+            0% { transform: translateY(0) scale(0.5); opacity: 1; }
+            50% { transform: translateY(-40px) scale(1.2); opacity: 0.8; }
+            100% { transform: translateY(-80px) scale(1); opacity: 0; }
+        }
+
+        /* ============================================
+           TRASH CAN — 3D RECYCLING BIN
+           ============================================ */
+        #trash-can-wrapper {
+            position: absolute;
+            bottom: 5%;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 10;
+            filter: drop-shadow(0 8px 20px rgba(0, 0, 0, 0.5));
+            transition: filter 0.3s ease;
+        }
+
+        #trash-can-wrapper.near-trash {
+            filter:
+                drop-shadow(0 8px 20px rgba(0, 0, 0, 0.5))
+                drop-shadow(0 0 20px rgba(76, 201, 248, 0.5));
+        }
+
+        /* Bin glow pulse */
+        #trash-can-wrapper::before {
+            content: '';
+            position: absolute;
+            bottom: -10px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 140%;
+            height: 20px;
+            background: radial-gradient(ellipse, rgba(76, 201, 248, 0.15), transparent 70%);
+            border-radius: 50%;
+            animation: binGlow 3s ease-in-out infinite;
+        }
+
+        @keyframes binGlow {
+            0%, 100% { opacity: 0.4; transform: translateX(-50%) scaleX(1); }
+            50% { opacity: 0.8; transform: translateX(-50%) scaleX(1.1); }
+        }
+
+        /* Bin bounce animation */
+        #trash-can-wrapper.bounce {
+            animation: binBounce 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+
+        @keyframes binBounce {
+            0% { transform: translateX(-50%) translateY(0); }
+            25% { transform: translateX(-50%) translateY(-12px) rotate(-2deg); }
+            50% { transform: translateX(-50%) translateY(-4px) rotate(1deg); }
+            75% { transform: translateX(-50%) translateY(-8px); }
+            100% { transform: translateX(-50%) translateY(0); }
+        }
+
+        /* Idle bob */
+        #trash-can-wrapper.idle {
+            animation: idleBob 4s ease-in-out infinite;
+        }
+
+        @keyframes idleBob {
+            0%, 100% { transform: translateX(-50%) translateY(0); }
+            50% { transform: translateX(-50%) translateY(-4px); }
+        }
+
+        /* Wheels */
+        .bin-wheels {
+            position: absolute;
+            bottom: -8px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 100%;
+            display: flex;
+            justify-content: space-between;
+            padding: 0 12px;
+        }
+
+        .bin-wheel {
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background: radial-gradient(circle at 40% 35%, #555, #222);
+            border: 2px solid #444;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+        }
+
+        .bin-wheel::after {
+            content: '';
+            position: absolute;
+            top: 3px;
+            left: 3px;
+            width: 4px;
+            height: 4px;
+            border-radius: 50%;
+            background: #666;
+        }
+
+        /* Bin body */
+        #trash-can {
+            position: relative;
+            width: 110px;
+            height: 130px;
+            background:
+                linear-gradient(135deg,
+                    var(--bin-highlight) 0%,
+                    var(--bin-primary) 25%,
+                    var(--bin-dark) 70%,
+                    #0d47a1 100%
+                );
+            border-radius: 8px 8px 18px 18px;
+            box-shadow:
+                inset -8px 0 15px rgba(0, 0, 0, 0.2),
+                inset 8px 0 15px rgba(255, 255, 255, 0.05),
+                inset 0 -10px 20px rgba(0, 0, 0, 0.15);
+            cursor: default;
+            transition: transform 0.3s ease;
+        }
+
+        /* Vertical panel lines */
+        #trash-can::before {
+            content: '';
+            position: absolute;
+            top: 20px;
+            bottom: 10px;
+            left: 25%;
+            width: 1px;
+            background: linear-gradient(180deg, transparent, rgba(255,255,255,0.08), transparent);
+        }
+
+        #trash-can::after {
+            content: '';
+            position: absolute;
+            top: 20px;
+            bottom: 10px;
+            right: 25%;
+            width: 1px;
+            background: linear-gradient(180deg, transparent, rgba(255,255,255,0.08), transparent);
+        }
+
+        /* Plastic highlight */
+        .bin-highlight {
+            position: absolute;
+            top: 15px;
+            left: 8px;
+            width: 18px;
+            height: 60%;
+            background: linear-gradient(180deg, rgba(255,255,255,0.12), rgba(255,255,255,0.02));
+            border-radius: 10px;
+            pointer-events: none;
+        }
+
+        /* Recycling symbol */
+        .recycle-symbol {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 2rem;
+            opacity: 0.25;
+            filter: drop-shadow(0 0 2px rgba(255,255,255,0.2));
+            pointer-events: none;
+        }
+
+        /* Handles */
+        .bin-handle {
+            position: absolute;
+            top: 30%;
+            width: 8px;
+            height: 24px;
+            background: linear-gradient(90deg, #1565C0, #1976D2, #1565C0);
+            border-radius: 3px;
+            box-shadow:
+                inset 0 1px 2px rgba(255,255,255,0.1),
+                0 2px 4px rgba(0, 0, 0, 0.3);
+        }
+
+        .bin-handle.left { left: -6px; }
+        .bin-handle.right { right: -6px; }
+
+        /* Lid */
+        .bin-lid {
+            position: absolute;
+            top: -16px;
+            left: -5px;
+            width: calc(100% + 10px);
+            height: 20px;
+            background:
+                linear-gradient(180deg,
+                    var(--bin-lid-light) 0%,
+                    var(--bin-lid) 40%,
+                    var(--bin-dark) 100%
+                );
+            border-radius: 6px 6px 2px 2px;
+            box-shadow:
+                0 -2px 6px rgba(0, 0, 0, 0.2),
+                inset 0 2px 3px rgba(255, 255, 255, 0.1),
+                inset 0 -1px 2px rgba(0, 0, 0, 0.2);
+            transform-origin: left bottom;
+            transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+            z-index: 2;
+        }
+
+        .bin-lid::before {
+            content: '';
+            position: absolute;
+            top: 4px;
+            left: 15%;
+            right: 15%;
+            height: 3px;
+            background: rgba(255, 255, 255, 0.08);
+            border-radius: 2px;
+        }
+
+        /* Lid handle knob */
+        .bin-lid-knob {
+            position: absolute;
+            top: -5px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 30px;
+            height: 6px;
+            background: linear-gradient(180deg, var(--bin-highlight), var(--bin-lid));
+            border-radius: 4px 4px 2px 2px;
+            box-shadow: 0 -1px 3px rgba(0, 0, 0, 0.3);
+        }
+
+        .bin-lid.open {
+            transform: rotate(-55deg) translateY(-6px);
+        }
+
+        /* Inner opening (visible when lid opens) */
+        .bin-opening {
+            position: absolute;
+            top: -2px;
+            left: 8px;
+            right: 8px;
+            height: 12px;
+            background: #0a1a2a;
+            border-radius: 4px 4px 0 0;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            z-index: 1;
+        }
+
+        .bin-lid.open ~ .bin-opening {
+            opacity: 1;
+        }
+
+        /* ============================================
+           TRASH ITEMS
+           ============================================ */
+        .trash-item {
+            position: absolute;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: grab;
+            user-select: none;
+            -webkit-user-select: none;
+            z-index: 5;
+            transition: box-shadow 0.2s ease;
+            will-change: transform;
+        }
+
+        .trash-item:active {
+            cursor: grabbing;
+        }
+
+        .trash-item .trash-inner {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            height: 100%;
+            border-radius: 12px;
+            font-size: 1.8rem;
+            position: relative;
+            transition: transform 0.15s ease, box-shadow 0.15s ease;
+            box-shadow:
+                0 4px 12px rgba(0, 0, 0, 0.35),
+                0 1px 3px rgba(0, 0, 0, 0.2);
+        }
+
+        .trash-item .trash-inner::after {
+            content: '';
+            position: absolute;
+            top: 4px;
+            left: 6px;
+            width: 40%;
+            height: 30%;
+            background: linear-gradient(135deg, rgba(255,255,255,0.15), transparent);
+            border-radius: 50%;
+            pointer-events: none;
+        }
+
+        /* Spawn animation */
+        .trash-item.spawning {
+            animation: trashSpawn 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+        }
+
+        @keyframes trashSpawn {
+            0% { transform: translateY(-80px) scale(0.3) rotate(30deg); opacity: 0; }
+            50% { transform: translateY(10px) scale(1.05) rotate(-5deg); opacity: 1; }
+            70% { transform: translateY(-5px) scale(0.98) rotate(2deg); }
+            100% { transform: translateY(0) scale(1) rotate(var(--rot, 0deg)); opacity: 1; }
+        }
+
+        /* Idle wobble */
+        .trash-item.idle-wobble {
+            animation: idleWobble var(--wobble-dur, 4s) ease-in-out infinite;
+            animation-delay: var(--wobble-delay, 0s);
+        }
+
+        @keyframes idleWobble {
+            0%, 100% { transform: rotate(var(--rot, 0deg)) translateY(0); }
+            25% { transform: rotate(calc(var(--rot, 0deg) + 2deg)) translateY(-2px); }
+            75% { transform: rotate(calc(var(--rot, 0deg) - 2deg)) translateY(2px); }
+        }
+
+        /* Being dragged */
+        .trash-item.dragging {
+            z-index: 999 !important;
+            transition: none !important;
+        }
+
+        .trash-item.dragging .trash-inner {
+            transform: scale(1.2) rotate(-5deg);
+            box-shadow:
+                0 12px 30px rgba(0, 0, 0, 0.5),
+                0 4px 10px rgba(0, 0, 0, 0.3),
+                0 0 20px rgba(76, 201, 248, 0.2);
+        }
+
+        /* Collection animation */
+        .trash-item.collecting {
+            animation: trashCollect 0.5s cubic-bezier(0.55, 0.085, 0.68, 0.53) forwards !important;
+            pointer-events: none !important;
+        }
+
+        @keyframes trashCollect {
+            0% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(0.6) rotate(180deg); opacity: 0.7; }
+            100% { transform: scale(0) rotate(360deg); opacity: 0; }
+        }
+
+        /* Trash return bounce when missed */
+        .trash-item.returning {
+            animation: trashReturn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+        }
+
+        @keyframes trashReturn {
+            0% { transform: scale(1.1); }
+            50% { transform: scale(0.95) rotate(3deg); }
+            100% { transform: scale(1) rotate(0deg); }
+        }
+
+        /* ============================================
+           PARTICLE EFFECTS
+           ============================================ */
+        .particle {
+            position: absolute;
+            pointer-events: none;
+            z-index: 50;
+            border-radius: 50%;
+        }
+
+        .particle.green {
+            background: radial-gradient(circle, var(--green), var(--green-dark));
+            box-shadow: 0 0 6px rgba(92, 219, 92, 0.6);
+        }
+
+        .particle.gold {
+            background: radial-gradient(circle, #fff, var(--gold));
+            box-shadow: 0 0 6px rgba(255, 215, 0, 0.6);
+        }
+
+        .particle.leaf {
+            background: none;
+            border-radius: 0;
+            font-size: 10px;
+        }
+
+        /* Celebration burst */
+        @keyframes particleBurst {
+            0% { transform: translate(0, 0) scale(1); opacity: 1; }
+            100% { transform: translate(var(--px), var(--py)) scale(0); opacity: 0; }
+        }
+
+        /* ============================================
+           THANK YOU POPUP
+           ============================================ */
+        #thank-you-popup {
+            position: absolute;
+            bottom: 180px;
+            left: 50%;
+            transform: translateX(-50%) translateY(10px);
+            padding: 10px 22px;
+            background: rgba(120, 40, 8, 0.85);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            border-radius: 20px;
+            font-weight: 700;
+            font-size: 1rem;
+            color: #ffe6c8;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease, transform 0.3s ease;
+            box-shadow:
+                0 4px 16px rgba(255, 120, 0, 0.3),
+                inset 0 1px 0 rgba(255, 255, 255, 0.12);
+            z-index: 80;
+            border: 1px solid rgba(255, 150, 60, 0.35);
+            max-width: 84%;
+            text-align: center;
+        }
+
+        #thank-you-popup.reject {
+            background: rgba(150, 30, 0, 0.92);
+            color: #fff;
+            border-color: rgba(255, 70, 0, 0.65);
+            box-shadow:
+                0 0 26px rgba(255, 60, 0, 0.5),
+                inset 0 1px 0 rgba(255, 255, 255, 0.2);
+        }
+
+        #thank-you-popup.hot {
+            font-size: 1.05rem;
+            box-shadow:
+                0 0 20px rgba(255, 150, 40, 0.45),
+                inset 0 1px 0 rgba(255, 255, 255, 0.15);
+        }
+
+        #thank-you-popup.show {
+            opacity: 1;
+            transform: translateX(-50%) translateY(0);
+        }
+
+        /* ============================================
+           GAME CONTROLS
+           ============================================ */
+        #game-controls {
+            margin-top: 12px;
+            display: flex;
+            gap: 12px;
+            z-index: 10;
+        }
+
+        .game-btn {
+            position: relative;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 14px;
+            font-weight: 700;
+            font-size: 0.95rem;
+            cursor: pointer;
+            transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+            letter-spacing: 0.3px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            overflow: hidden;
+        }
+
+        .game-btn::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 50%;
+            background: linear-gradient(180deg, rgba(255,255,255,0.15), transparent);
+            border-radius: 14px 14px 0 0;
+            pointer-events: none;
+        }
+
+        .game-btn.primary {
+            background: linear-gradient(135deg, #43e87c, #2a9d2a);
+            color: white;
+            box-shadow:
+                0 4px 15px rgba(42, 157, 42, 0.4),
+                0 1px 3px rgba(0, 0, 0, 0.2);
+        }
+
+        .game-btn.primary:hover {
+            transform: translateY(-3px) scale(1.03);
+            box-shadow:
+                0 8px 25px rgba(42, 157, 42, 0.5),
+                0 2px 6px rgba(0, 0, 0, 0.2);
+        }
+
+        .game-btn.primary:active {
+            transform: translateY(0) scale(0.97);
+            box-shadow:
+                0 2px 8px rgba(42, 157, 42, 0.3);
+        }
+
+        .game-btn.secondary {
+            background: linear-gradient(135deg, #5dd8f8, #3a99b8);
+            color: #0a1a2a;
+            box-shadow:
+                0 4px 15px rgba(76, 201, 248, 0.3),
+                0 1px 3px rgba(0, 0, 0, 0.2);
+        }
+
+        .game-btn.secondary:hover {
+            transform: translateY(-3px) scale(1.03);
+            box-shadow:
+                0 8px 25px rgba(76, 201, 248, 0.4),
+                0 2px 6px rgba(0, 0, 0, 0.2);
+        }
+
+        .game-btn.secondary:active {
+            transform: translateY(0) scale(0.97);
+            box-shadow:
+                0 2px 8px rgba(76, 201, 248, 0.2);
+        }
+
+        .btn-icon {
+            font-size: 1.1rem;
+        }
+
+        /* ============================================
+           MOBILE INSTRUCTIONS
+           ============================================ */
+        #mobile-instructions {
+            display: none;
+            margin-top: 8px;
+            font-size: 0.8rem;
+            color: rgba(255, 255, 255, 0.35);
+            text-align: center;
+        }
+
+        @media (max-width: 768px) {
+            #mobile-instructions { display: block; }
+            #game-container { height: 60vh; min-height: 360px; }
+            .trash-item { width: 48px !important; height: 48px !important; }
+            .trash-item .trash-inner { font-size: 1.4rem; }
+            #trash-can { width: 90px; height: 110px; }
+            .bin-lid { height: 16px; top: -14px; }
+        }
+
+        /* ============================================
+           WIN SCREEN OVERLAY
+           ============================================ */
+        #win-overlay {
+            position: absolute;
+            inset: 0;
+            z-index: 500;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background: rgba(5, 15, 30, 0.85);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.5s ease;
+            border-radius: 20px;
+        }
+
+        #win-overlay.show {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .win-content {
+            text-align: center;
+            transform: scale(0.7);
+            transition: transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+
+        #win-overlay.show .win-content {
+            transform: scale(1);
+        }
+
+        .win-icon {
+            font-size: 4rem;
+            animation: winSpin 2s ease-in-out infinite;
+            filter: drop-shadow(0 0 20px rgba(92, 219, 92, 0.5));
+        }
+
+        @keyframes winSpin {
+            0%, 100% { transform: rotate(-5deg) scale(1); }
+            50% { transform: rotate(5deg) scale(1.1); }
+        }
+
+        .win-title {
+            font-size: clamp(1.4rem, 4vw, 2rem);
+            font-weight: 800;
+            margin: 16px 0 8px;
+            background: linear-gradient(135deg, #43e87c, var(--accent), #ffd700);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .win-subtitle {
+            font-size: 1rem;
+            color: rgba(255,255,255,0.6);
+            margin-bottom: 20px;
+        }
+
+        .win-score {
+            font-size: 1.3rem;
+            font-weight: 700;
+            color: var(--gold);
+            margin-bottom: 24px;
+            text-shadow: 0 0 10px rgba(255, 215, 0, 0.3);
+        }
+
+        .win-btn {
+            padding: 14px 36px;
+            border: none;
+            border-radius: 16px;
+            background: linear-gradient(135deg, #43e87c, #2a9d2a);
+            color: white;
+            font-size: 1.1rem;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+            box-shadow:
+                0 4px 20px rgba(42, 157, 42, 0.4),
+                inset 0 1px 0 rgba(255, 255, 255, 0.15);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .win-btn::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 50%;
+            background: linear-gradient(180deg, rgba(255,255,255,0.15), transparent);
+            border-radius: 16px 16px 0 0;
+            pointer-events: none;
+        }
+
+        .win-btn:hover {
+            transform: translateY(-3px) scale(1.05);
+            box-shadow: 0 8px 30px rgba(42, 157, 42, 0.5);
+        }
+
+        .win-btn:active {
+            transform: translateY(0) scale(0.97);
+        }
+
+        /* Win screen celebration particles */
+        .win-particle {
+            position: absolute;
+            pointer-events: none;
+            font-size: 1.2rem;
+            animation: winParticleFall linear forwards;
+        }
+
+        @keyframes winParticleFall {
+            0% { transform: translateY(-20px) rotate(0deg); opacity: 1; }
+            100% { transform: translateY(500px) rotate(720deg); opacity: 0; }
+        }
+
+        /* ============================================
+           USELESS-PROJECT ADDITIONS —
+           rejection drama, meta toasts, bin shakes
+           ============================================ */
+        /* Screen shake (very short) */
+        #game-container.shake {
+            animation: screenShake 0.45s ease;
+        }
+
+        @keyframes screenShake {
+            0%, 100% { transform: translate(0, 0); }
+            25% { transform: translate(-4px, 2px); }
+            50% { transform: translate(4px, -2px); }
+            75% { transform: translate(-3px, 1px); }
+        }
+
+        /* Bin rejection shake */
+        #trash-can-wrapper.reject {
+            animation: binReject 0.4s cubic-bezier(0.36, 0.07, 0.19, 0.97);
+        }
+
+        @keyframes binReject {
+            0% { transform: translateX(-50%); }
+            20% { transform: translateX(calc(-50% + 6px)) rotate(2deg); }
+            40% { transform: translateX(calc(-50% - 6px)) rotate(-2deg); }
+            60% { transform: translateX(calc(-50% + 4px)) rotate(1deg); }
+            80% { transform: translateX(calc(-50% - 3px)); }
+            100% { transform: translateX(-50%); }
+        }
+
+        /* Lid slam (hard, fast closure) */
+        .bin-lid.slam {
+            animation: lidSlam 0.35s cubic-bezier(0.55, 0, 0.85, 0.5);
+        }
+
+        @keyframes lidSlam {
+            0% { transform: rotate(0deg); }
+            40% { transform: rotate(-68deg); }
+            100% { transform: rotate(0deg); }
+        }
+
+        /* Rejection red/orange glow flash + oversized text */
+        #reject-flash {
+            position: absolute;
+            inset: 0;
+            z-index: 450;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: radial-gradient(circle at 50% 50%, rgba(255, 60, 0, 0.35), rgba(120, 0, 0, 0.18) 55%, transparent 75%);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.25s ease;
+            border-radius: 20px;
+        }
+
+        #reject-flash.show {
+            opacity: 1;
+        }
+
+        #reject-flash .reject-text {
+            font-size: clamp(1.6rem, 6vw, 3rem);
+            font-weight: 900;
+            color: #ffb59a;
+            text-transform: uppercase;
+            letter-spacing: 4px;
+            text-shadow: 0 0 24px rgba(255, 80, 0, 0.8), 0 2px 0 #7a1f00;
+            animation: rejectPulse 0.8s ease-in-out infinite;
+        }
+
+        @keyframes rejectPulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.08); }
+        }
+
+        /* Self-aware meta toast (non-blocking) */
+        #meta-toast {
+            position: absolute;
+            left: 50%;
+            bottom: 64px;
+            transform: translateX(-50%) translateY(8px);
+            padding: 8px 18px;
+            border-radius: 16px;
+            background: rgba(10, 20, 40, 0.6);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            border: 1px solid rgba(255, 215, 0, 0.2);
+            color: #ffd9a0;
+            font-size: 0.85rem;
+            font-weight: 600;
+            white-space: normal;
+            text-align: center;
+            max-width: 90%;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.4s ease, transform 0.4s ease;
+            z-index: 90;
+        }
+
+        #meta-toast.show {
+            opacity: 1;
+            transform: translateX(-50%) translateY(0);
+        }
+    </style>
+</head>
+<body>
+    <h1 class="game-title">🌿 Trash Cleanup Game 🌍</h1>
+
+    <div id="game-container">
+        <!-- Dynamic game elements rendered by JS -->
+    </div>
+
+    <div id="game-controls">
+        <button class="game-btn primary" id="new-game">
+            <span class="btn-icon">🔄</span> New Game
+        </button>
+        <button class="game-btn secondary" id="add-trash">
+            <span class="btn-icon">➕</span> Add More Trash
+        </button>
+    </div>
+
+    <div id="mobile-instructions">
+        Tap &amp; drag trash to the bin 🗑️ (the bin may judge you)
+    </div>
+
+    <script>
+    /* ============================================
+       GAME CONFIGURATION
+       ============================================ */
+    const CONFIG = {
+        SPAWN_INTERVAL: 2200,
+        TRASH_ITEMS: [
+            { emoji: '🍌', label: 'Banana peel', bg: 'linear-gradient(135deg, #ffe082, #f9a825, #e8a000)', size: 52 },
+            { emoji: '🥫', label: 'Soda can', bg: 'linear-gradient(135deg, #ef5350, #c62828, #b71c1c)', size: 44 },
+            { emoji: '📄', label: 'Paper', bg: 'linear-gradient(135deg, #fafafa, #e0e0e0, #bdbdbd)', size: 50 },
+            { emoji: '🧴', label: 'Plastic bottle', bg: 'linear-gradient(135deg, #81d4fa, #42a5f5, #1e88e5)', size: 48 },
+            { emoji: '🍫', label: 'Wrapper', bg: 'linear-gradient(135deg, #8d6e63, #5d4037, #3e2723)', size: 42 },
+            { emoji: '🥤', label: 'Plastic cup', bg: 'linear-gradient(135deg, #ffab91, #ff7043, #e64a19)', size: 46 },
+            { emoji: '📦', label: 'Cardboard', bg: 'linear-gradient(135deg, #bcaaa4, #8d6e63, #6d4c41)', size: 56 },
+            { emoji: '📰', label: 'Newspaper', bg: 'linear-gradient(135deg, #e0e0e0, #9e9e9e, #757575)', size: 50 },
+            { emoji: '🍾', label: 'Glass bottle', bg: 'linear-gradient(135deg, #a5d6a7, #66bb6a, #2e7d32)', size: 50 },
+            { emoji: '🥡', label: 'Food container', bg: 'linear-gradient(135deg, #fff9c4, #fff176, #fdd835)', size: 48 },
+        ],
+        ROASTS: [
+            'Congratulations. You discovered what a dustbin is.',
+            'You could have done this in real life.',
+            'Bro really opened a website to throw virtual garbage.',
+            'Humanity has peaked. You put a banana in a bin.',
+            'Imagine explaining to someone what you\u2019re doing right now.',
+            'This is somehow your most productive activity today.',
+            'You spent time coding a game about putting trash in a bin.',
+            'The planet didn\u2019t ask for this game.',
+            'You could\u2019ve picked up actual trash. But here we are.',
+            'Achievement unlocked: Avoided doing something useful.',
+            'Your mouse has contributed more to cleanliness than you have.',
+            'Excellent. The fictional park is proud of you.',
+            'This project has officially become a waste of time.',
+            'Somewhere, a real dustbin is feeling unemployed.',
+            'You are manually simulating basic human responsibility.'
+        ],
+        REJECT_ROASTS: [
+            'The bin rejected your contribution to society.',
+            'Even the dustbin has standards.',
+            'The dustbin looked at your attempt and chose peace.',
+            'Rejected. Just like your productivity today.',
+            'The bin has seen enough.',
+            'That was embarrassing. Try again.',
+            'The trash belongs in the bin. Your dignity belongs somewhere else.',
+            'You had ONE job.',
+            'The bin is reconsidering this entire project.',
+            'This is what you decided to spend your time doing?',
+            'The dustbin has officially lost faith in humanity.',
+            'Somehow you made throwing trash complicated.',
+            'Your ancestors invented civilization for THIS?',
+            'Please reconsider your life choices. Preferably your project choices.',
+            'The bin requested a different player.'
+        ],
+        SLOW_ROASTS: {
+            mid: [
+                '15 seconds. For THAT?',
+                'You had time to rethink your strategy. You didn\u2019t.',
+                'The trash was waiting for you.',
+                'This wasn\u2019t a boss fight.',
+                'The bin is literally RIGHT THERE.',
+                '15 seconds of intense garbage management.'
+            ],
+            heavy: [
+                'Bro spent 15+ seconds throwing trash into a bin.',
+                'At this speed, the park will be clean by 2047.',
+                'NASA called. They want their processing power back.',
+                'You could\u2019ve picked up real trash faster.',
+                'A loading screen has more purpose than this.',
+                'Congratulations on completing the world\u2019s slowest garbage collection.'
+            ],
+            absurd: [
+                'Thirty seconds. One piece of trash. One bin. One browser tab. This is your legacy now.',
+                'You have taken so long that the trash has formed opinions about you.',
+                'At this rate, your browser\u2019s history will expire before this item is cleaned.',
+                'The bin has started charging you rent.',
+                'Historians will study this interaction.',
+                'You are now physically older than this trash.'
+            ]
+        },
+        META_MESSAGES: [
+            'This could have been an actual utility app.',
+            'Someone approved this idea.',
+            'TinkerHub will never recover.',
+            'You are currently testing the limits of uselessness.',
+            'There are thousands of useful projects. You chose this.',
+            'The code is working. The purpose isn\u2019t.',
+            'At least the animations look good.',
+            'This is technically software.',
+            'Nobody asked for this.',
+            'And yet\u2026 here you are.'
+        ],
+        USELESS_LEVELS: [
+            { min: 200, label: 'WHY' },
+            { min: 100, label: 'LEGENDARY' },
+            { min: 50, label: 'CRITICAL' },
+            { min: 20, label: 'NOTABLE' },
+            { min: 0, label: 'DORMANT' }
+        ]
+    };
+
+    /* ============================================
+       GAME STATE
+       ============================================ */
+    const state = {
+        score: 0,
+        useless: 0,
+        isGameActive: false,
+        trashInterval: null,
+        metaInterval: null,
+        metaStartTimer: null,
+        trashItems: [],
+        lastPicks: {},
+    };
+
+    /* ============================================
+       DOM REFERENCES
+       ============================================ */
+    const container = document.getElementById('game-container');
+    const newGameBtn = document.getElementById('new-game');
+    const addTrashBtn = document.getElementById('add-trash');
+
+    /* ============================================
+       SCENE BUILDER — Background environment
+       ============================================ */
+    function buildScene() {
+        /* Moon */
+        const moon = document.createElement('div');
+        moon.className = 'moon';
+        container.appendChild(moon);
+
+        /* Stars */
+        const stars = document.createElement('div');
+        stars.className = 'stars';
+        for (let i = 0; i < 30; i++) {
+            const s = document.createElement('div');
+            s.className = 'star';
+            const sz = Math.random() * 2 + 1;
+            s.style.cssText = `
+                width: ${sz}px; height: ${sz}px;
+                top: ${Math.random() * 45}%;
+                left: ${Math.random() * 100}%;
+                animation-delay: ${Math.random() * 3}s;
+                animation-duration: ${2 + Math.random() * 3}s;
+            `;
+            stars.appendChild(s);
+        }
+        container.appendChild(stars);
+
+        /* Background trees */
+        const treeData = [
+            { left: '5%', h: 90, w: 50 },
+            { left: '15%', h: 70, w: 40 },
+            { left: '78%', h: 100, w: 55 },
+            { left: '90%', h: 75, w: 42 },
+        ];
+        treeData.forEach(t => {
+            const tree = document.createElement('div');
+            tree.className = 'tree-bg';
+            tree.style.left = t.left;
+            tree.innerHTML = `
+                <div class="canopy" style="width:${t.w}px; height:${t.w * 1.1}px; bottom: ${t.h * 0.5}px;"></div>
+                <div class="trunk" style="height: ${t.h * 0.55}px;"></div>
+            `;
+            container.appendChild(tree);
+        });
+
+        /* Bushes */
+        const bushData = [
+            { left: '2%', w: 50, h: 22 },
+            { left: '22%', w: 35, h: 18 },
+            { left: '72%', w: 55, h: 24 },
+            { left: '92%', w: 40, h: 20 },
+        ];
+        bushData.forEach(b => {
+            const bush = document.createElement('div');
+            bush.className = 'bush';
+            bush.style.cssText = `left: ${b.left}; width: ${b.w}px; height: ${b.h}px;`;
+            container.appendChild(bush);
+        });
+
+        /* Ground / Pavement */
+        const ground = document.createElement('div');
+        ground.className = 'ground';
+        ground.innerHTML = '<div class="pavement"></div>';
+        container.appendChild(ground);
+
+        /* Atmosphere overlay */
+        const atmo = document.createElement('div');
+        atmo.className = 'atmosphere';
+        container.appendChild(atmo);
+
+        /* Floating background leaves */
+        for (let i = 0; i < 6; i++) {
+            const leaf = document.createElement('div');
+            leaf.className = 'bg-leaf';
+            leaf.textContent = ['🍃', '🍂', '🌿'][Math.floor(Math.random() * 3)];
+            leaf.style.cssText = `
+                left: ${Math.random() * 100}%;
+                top: -20px;
+                animation-duration: ${8 + Math.random() * 12}s;
+                animation-delay: ${Math.random() * 10}s;
+                font-size: ${8 + Math.random() * 6}px;
+            `;
+            container.appendChild(leaf);
+        }
+    }
+
+    /* ============================================
+       TRASH CAN BUILDER
+       ============================================ */
+    function buildTrashCan() {
+        const wrapper = document.createElement('div');
+        wrapper.id = 'trash-can-wrapper';
+        wrapper.classList.add('idle');
+
+        wrapper.innerHTML = `
+            <div class="bin-lid" id="bin-lid">
+                <div class="bin-lid-knob"></div>
+            </div>
+            <div class="bin-opening"></div>
+            <div id="trash-can">
+                <div class="bin-highlight"></div>
+                <div class="recycle-symbol">♻</div>
+                <div class="bin-handle left"></div>
+                <div class="bin-handle right"></div>
+            </div>
+            <div class="bin-wheels">
+                <div class="bin-wheel"></div>
+                <div class="bin-wheel"></div>
+            </div>
+        `;
+
+        container.appendChild(wrapper);
+        return wrapper;
+    }
+
+    /* ============================================
+       SCORE HUD BUILDER
+       ============================================ */
+    function buildScoreHud() {
+        const hud = document.createElement('div');
+        hud.id = 'score-hud';
+        hud.innerHTML = `
+            <span class="score-icon">♻️</span>
+            <span id="score-value">0</span>
+            <span class="score-separator">/</span>
+            <span id="score-denominator">0</span>
+        `;
+        container.appendChild(hud);
+        return hud;
+    }
+
+    /* ============================================
+       WIN OVERLAY BUILDER
+       ============================================ */
+    function buildWinOverlay() {
+        const overlay = document.createElement('div');
+        overlay.id = 'win-overlay';
+        overlay.innerHTML = `
+            <div class="win-content">
+                <div class="win-icon">♻️</div>
+                <div class="win-title">Congratulations!</div>
+                <div class="win-subtitle" id="win-subtitle">You have achieved absolutely nothing.</div>
+                <div class="win-score">Score: <span id="win-score-val">0 / 0</span></div>
+                <button class="win-btn" id="play-again-btn">
+                    <span>⏳</span> Continue Wasting Time
+                </button>
+            </div>
+        `;
+        container.appendChild(overlay);
+        document.getElementById('play-again-btn').addEventListener('click', () => {
+            overlay.classList.remove('show');
+        });
+        return overlay;
+    }
+
+    /* ============================================
+       THANK YOU POPUP
+       ============================================ */
+    function buildThankYouPopup() {
+        const popup = document.createElement('div');
+        popup.id = 'thank-you-popup';
+        container.appendChild(popup);
+
+        const flash = document.createElement('div');
+        flash.id = 'reject-flash';
+        flash.innerHTML = '<div class="reject-text">REJECTED!</div>';
+        container.appendChild(flash);
+
+        return popup;
+    }
+
+    function buildUselessHud() {
+        const hud = document.createElement('div');
+        hud.id = 'useless-hud';
+        hud.innerHTML = `
+            <span id="useless-label">USELESSNESS:</span>
+            <span id="useless-value">0%</span>
+            <span id="useless-level"></span>
+        `;
+        container.appendChild(hud);
+        return hud;
+    }
+
+    function buildMetaToast() {
+        const toast = document.createElement('div');
+        toast.id = 'meta-toast';
+        container.appendChild(toast);
+        return toast;
+    }
+
+    /* ============================================
+       PARTICLE SYSTEM
+       ============================================ */
+    function spawnParticles(x, y, count, type = 'green') {
+        for (let i = 0; i < count; i++) {
+            const p = document.createElement('div');
+            p.className = `particle ${type}`;
+            const size = type === 'leaf' ? 10 : (4 + Math.random() * 6);
+            const angle = (Math.PI * 2 * i) / count + (Math.random() - 0.5) * 0.5;
+            const dist = 30 + Math.random() * 50;
+            const px = Math.cos(angle) * dist;
+            const py = Math.sin(angle) * dist;
+
+            if (type === 'leaf') {
+                p.textContent = ['🍃', '✨', '💚'][Math.floor(Math.random() * 3)];
+            }
+
+            p.style.cssText = `
+                left: ${x}px; top: ${y}px;
+                width: ${size}px; height: ${size}px;
+                ${type === 'leaf' ? `font-size: ${size}px; line-height: ${size}px;` : ''}
+                --px: ${px}px; --py: ${py}px;
+                animation: particleBurst ${0.5 + Math.random() * 0.4}s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+            `;
+            container.appendChild(p);
+            setTimeout(() => p.remove(), 1000);
+        }
+    }
+
+    function spawnWinParticles() {
+        const emojis = ['🌱', '🌿', '🍃', '💚', '✨', '🌍', '♻️', '🎉'];
+        for (let i = 0; i < 20; i++) {
+            const p = document.createElement('div');
+            p.className = 'win-particle';
+            p.textContent = emojis[Math.floor(Math.random() * emojis.length)];
+            p.style.cssText = `
+                left: ${Math.random() * 100}%;
+                top: -20px;
+                animation-duration: ${2 + Math.random() * 3}s;
+                animation-delay: ${Math.random() * 2}s;
+                font-size: ${14 + Math.random() * 14}px;
+            `;
+            container.appendChild(p);
+            setTimeout(() => p.remove(), 6000);
+        }
+    }
+
+    /* ============================================
+       SCORE MANAGEMENT
+       ============================================ */
+    function updateScore(el) {
+        state.score++;
+        const scoreEl = document.getElementById('score-value');
+        const denomEl = document.getElementById('score-denominator');
+        const hud = document.getElementById('score-hud');
+
+        scoreEl.textContent = state.score;
+        if (denomEl) denomEl.textContent = state.score;
+
+        /* Pulse animation */
+        scoreEl.classList.add('bump');
+        hud.classList.add('score-pulse');
+        setTimeout(() => {
+            scoreEl.classList.remove('bump');
+            hud.classList.remove('score-pulse');
+        }, 300);
+
+        /* Floating +1 */
+        const floater = document.createElement('div');
+        floater.className = 'float-score';
+        floater.textContent = '+1';
+        floater.style.cssText = `
+            left: ${container.clientWidth / 2 - 10}px;
+            bottom: 45%;
+        `;
+        container.appendChild(floater);
+        setTimeout(() => floater.remove(), 1100);
+
+        /* Uselessness tracker */
+        updateUseless();
+
+        /* Slow-collection roast (15s+ / 20s+ / 30s+) */
+        if (el && el._spawnTime) {
+            const secs = (Date.now() - el._spawnTime) / 1000;
+            if (secs >= 15) {
+                const tier = secs >= 30 ? 'absurd' : (secs >= 20 ? 'heavy' : 'mid');
+                showRoast(pickMessage(CONFIG.SLOW_ROASTS[tier], 'slow'), 'hot', 2600);
+            } else {
+                showRoast(pickMessage(CONFIG.ROASTS, 'roast'), '', 1200);
+            }
+        } else {
+            /* Standard roast on success */
+            showRoast(pickMessage(CONFIG.ROASTS, 'roast'), '', 1200);
+        }
+
+        /* Useless milestone overlay every 10 collections */
+        if (state.score % 10 === 0) showMilestone();
+    }
+
+    function showRoast(msg, cls, dur) {
+        const popup = document.getElementById('thank-you-popup');
+        popup.textContent = msg;
+        popup.classList.add('show');
+        if (cls) popup.classList.add(cls);
+        clearTimeout(popup._timer);
+        popup._timer = setTimeout(() => {
+            popup.classList.remove('show', 'hot', 'reject');
+        }, dur || 1200);
+    }
+
+    /* ============================================
+       TRASH SPAWNING
+       ============================================ */
+    function spawnTrash() {
+        if (!state.isGameActive) return;
+
+        const type = CONFIG.TRASH_ITEMS[Math.floor(Math.random() * CONFIG.TRASH_ITEMS.length)];
+        const item = document.createElement('div');
+        item.className = 'trash-item spawning';
+
+        const size = type.size + Math.floor(Math.random() * 8 - 4);
+        const rotation = Math.floor(Math.random() * 30 - 15);
+        const wobbleDur = 3 + Math.random() * 3;
+        const wobbleDelay = Math.random() * 2;
+
+        item.style.cssText = `
+            width: ${size}px; height: ${size}px;
+            --rot: ${rotation}deg;
+            --wobble-dur: ${wobbleDur}s;
+            --wobble-delay: ${wobbleDelay}s;
+        `;
+
+        const inner = document.createElement('div');
+        inner.className = 'trash-inner';
+        inner.style.background = type.bg;
+        inner.textContent = type.emoji;
+        inner.setAttribute('aria-label', type.label);
+        item.appendChild(inner);
+
+        /* Record spawn time for slow-collection roasts */
+        item._spawnTime = Date.now();
+
+        /* Position — avoid the bin area */
+        const cw = container.clientWidth;
+        const ch = container.clientHeight;
+        const margin = 20;
+        const x = margin + Math.random() * (cw - size - margin * 2);
+        const y = margin + Math.random() * (ch * 0.55 - size);
+        item.style.left = x + 'px';
+        item.style.top = y + 'px';
+
+        /* Remove spawning class and add idle wobble */
+        setTimeout(() => {
+            item.classList.remove('spawning');
+            item.classList.add('idle-wobble');
+        }, 650);
+
+        makeDraggable(item);
+        container.appendChild(item);
+        state.trashItems.push(item);
+    }
+
+    /* ============================================
+       DRAG & DROP SYSTEM
+       ============================================ */
+    function makeDraggable(el) {
+        let startX, startY, origLeft, origTop;
+        let isDragging = false;
+        let dragReady = false;
+        const containerRect = () => container.getBoundingClientRect();
+
+        function getEventPos(e) {
+            if (e.touches && e.touches.length > 0) return e.touches[0];
+            return e;
+        }
+
+        function onStart(e) {
+            if (!state.isGameActive || dragReady) return;
+            e.preventDefault();
+            const pos = getEventPos(e);
+            if (!pos) return;
+            const cRect = containerRect();
+
+            startX = pos.clientX;
+            startY = pos.clientY;
+            origLeft = parseFloat(el.style.left);
+            origTop = parseFloat(el.style.top);
+
+            isDragging = true;
+            dragReady = true;
+            el.classList.add('dragging');
+            el.classList.remove('idle-wobble');
+
+            /* Pause idle wobble during drag */
+            el.style.animation = 'none';
+
+            if ('PointerEvent' in window) {
+                document.addEventListener('pointermove', onMove, { passive: false });
+                document.addEventListener('pointerup', onEnd);
+                document.addEventListener('pointercancel', onEnd);
+            } else {
+                document.addEventListener('mousemove', onMove, { passive: false });
+                document.addEventListener('mouseup', onEnd);
+                el.addEventListener('touchmove', onMove, { passive: false });
+                el.addEventListener('touchend', onEnd);
+                el.addEventListener('touchcancel', onEnd);
+            }
+        }
+
+        function onMove(e) {
+            if (!isDragging) return;
+            e.preventDefault();
+            const pos = getEventPos(e);
+            if (!pos) return;
+            const cRect = containerRect();
+
+            let newLeft = origLeft + (pos.clientX - startX);
+            let newTop = origTop + (pos.clientY - startY);
+
+            const elW = el.offsetWidth;
+            const elH = el.offsetHeight;
+
+            newLeft = Math.max(0, Math.min(newLeft, container.clientWidth - elW));
+            newTop = Math.max(0, Math.min(newTop, container.clientHeight - elH));
+
+            el.style.left = newLeft + 'px';
+            el.style.top = newTop + 'px';
+
+            /* Check proximity to bin */
+            checkBinProximity(el);
+        }
+
+        function onEnd(e) {
+            if (!isDragging) return;
+            isDragging = false;
+            dragReady = false;
+
+            if ('PointerEvent' in window) {
+                document.removeEventListener('pointermove', onMove);
+                document.removeEventListener('pointerup', onEnd);
+                document.removeEventListener('pointercancel', onEnd);
+            } else {
+                document.removeEventListener('mousemove', onMove);
+                document.removeEventListener('mouseup', onEnd);
+                el.removeEventListener('touchmove', onMove);
+                el.removeEventListener('touchend', onEnd);
+                el.removeEventListener('touchcancel', onEnd);
+            }
+
+            el.classList.remove('dragging');
+
+            if (isOverlappingBin(el)) {
+                attemptCollection(el, { x: origLeft, y: origTop });
+            } else {
+                /* Return bounce */
+                el.classList.add('returning');
+                setTimeout(() => el.classList.remove('returning'), 450);
+
+                /* Resume idle wobble */
+                setTimeout(() => {
+                    el.style.animation = '';
+                    el.classList.add('idle-wobble');
+                }, 100);
+
+                /* Reset bin proximity */
+                resetBinProximity();
+            }
+        }
+
+        if ('PointerEvent' in window) {
+            el.addEventListener('pointerdown', onStart, { passive: false });
+        } else {
+            el.addEventListener('mousedown', onStart);
+            el.addEventListener('touchstart', onStart, { passive: false });
+        }
+    }
+
+    /* ============================================
+       BIN PROXIMITY DETECTION
+       ============================================ */
+    function checkBinProximity(el) {
+        const wrapper = document.getElementById('trash-can-wrapper');
+        if (!wrapper) return;
+        const lid = document.getElementById('bin-lid');
+        const elRect = el.getBoundingClientRect();
+        const binRect = wrapper.getBoundingClientRect();
+
+        const dist = Math.hypot(
+            (elRect.left + elRect.width / 2) - (binRect.left + binRect.width / 2),
+            (elRect.top + elRect.height / 2) - (binRect.top + binRect.height / 2)
+        );
+
+        if (dist < 150) {
+            wrapper.classList.add('near-trash');
+            wrapper.classList.remove('idle');
+            if (lid) lid.classList.add('open');
+        } else {
+            wrapper.classList.remove('near-trash');
+            if (lid) lid.classList.remove('open');
+        }
+    }
+
+    function resetBinProximity() {
+        const wrapper = document.getElementById('trash-can-wrapper');
+        const lid = document.getElementById('bin-lid');
+        if (wrapper) {
+            wrapper.classList.remove('near-trash');
+            wrapper.classList.add('idle');
+        }
+        if (lid) lid.classList.remove('open');
+    }
+
+    /* ============================================
+       OVERLAP CHECK
+       ============================================ */
+    function isOverlappingBin(el) {
+        const elRect = el.getBoundingClientRect();
+        const wrapper = document.getElementById('trash-can-wrapper');
+        if (!wrapper) return false;
+        const binRect = wrapper.getBoundingClientRect();
+
+        /* Expand hit area slightly */
+        const pad = 20;
+        return (
+            elRect.left < binRect.right + pad &&
+            elRect.right > binRect.left - pad &&
+            elRect.top < binRect.bottom + pad &&
+            elRect.bottom > binRect.top - pad
+        );
+    }
+
+    /* ============================================
+       TRASH COLLECTION ANIMATION
+       ============================================ */
+    function collectTrash(el) {
+        const wrapper = document.getElementById('trash-can-wrapper');
+        const lid = document.getElementById('bin-lid');
+        const binRect = wrapper.getBoundingClientRect();
+        const contRect = container.getBoundingClientRect();
+
+        /* Move trash toward bin center */
+        const targetX = binRect.left - contRect.left + binRect.width / 2 - el.offsetWidth / 2;
+        const targetY = binRect.top - contRect.top + binRect.height / 3 - el.offsetHeight / 2;
+
+        el.style.transition = 'all 0.35s cubic-bezier(0.55, 0.085, 0.68, 0.53)';
+        el.style.left = targetX + 'px';
+        el.style.top = targetY + 'px';
+
+        /* Open lid */
+        if (lid) lid.classList.add('open');
+
+        setTimeout(() => {
+            el.classList.add('collecting');
+        }, 200);
+
+        setTimeout(() => {
+            /* Close lid */
+            if (lid) lid.classList.remove('open');
+
+            /* Bin bounce */
+            wrapper.classList.remove('idle');
+            wrapper.classList.add('bounce');
+            setTimeout(() => {
+                wrapper.classList.remove('bounce');
+                wrapper.classList.add('idle');
+            }, 550);
+
+            /* Particles at bin */
+            const px = binRect.left - contRect.left + binRect.width / 2;
+            const py = binRect.top - contRect.top + binRect.height / 2;
+            spawnParticles(px, py, 8, 'green');
+            spawnParticles(px, py, 4, 'leaf');
+
+            /* Remove item */
+            el.remove();
+            state.trashItems = state.trashItems.filter(t => t !== el);
+
+            /* Update score (passes item to check collection time) */
+            updateScore(el);
+        }, 550);
+    }
+
+    /* ============================================
+       USELESS-PROJECT MECHANICS
+       — roasts, rejections, slow timers, milestones
+       ============================================ */
+    function pickMessage(pool, key) {
+        const last = state.lastPicks[key];
+        let msg = null;
+        for (let tries = 0; tries < 5; tries++) {
+            const cand = pool[Math.floor(Math.random() * pool.length)];
+            if (cand !== last) { msg = cand; break; }
+        }
+        const chosen = msg || pool[0];
+        state.lastPicks[key] = chosen;
+        return chosen;
+    }
+
+    function attemptCollection(el, returnTo) {
+        /* Early game is always accepted so rejection stays a joke */
+        const rejectChance = state.score < 3 ? 0 : 0.2;
+        if (Math.random() < rejectChance) {
+            rejectTrash(el, returnTo);
+        } else {
+            collectTrash(el);
+        }
+    }
+
+    function rejectTrash(el, returnTo) {
+        const wrapper = document.getElementById('trash-can-wrapper');
+        const lid = document.getElementById('bin-lid');
+        const flash = document.getElementById('reject-flash');
+
+        /* Lid slams shut + bin shakes */
+        if (lid) { lid.classList.add('open', 'slam'); }
+        if (wrapper) { wrapper.classList.remove('idle'); wrapper.classList.add('reject'); }
+
+        /* Short screen shake */
+        container.classList.add('shake');
+        setTimeout(() => container.classList.remove('shake'), 500);
+
+        /* Dramatic red/orange flash with oversized text */
+        if (flash) {
+            flash.classList.add('show');
+            setTimeout(() => flash.classList.remove('show'), 1400);
+        } else {
+            spawnParticles(container.clientWidth / 2, container.clientHeight / 2, 10, 'gold');
+        }
+
+        showRoast(pickMessage(CONFIG.REJECT_ROASTS, 'reject'), 'reject', 1800);
+
+        /* Trash bounces back to its previous position */
+        el.style.transition = 'all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)';
+        el.style.left = returnTo.x + 'px';
+        el.style.top = returnTo.y + 'px';
+
+        setTimeout(() => {
+            el.classList.add('returning');
+        }, 360);
+
+        setTimeout(() => {
+            el.classList.remove('returning');
+            el.style.transition = '';
+            el.style.animation = '';
+            el.classList.add('idle-wobble');
+            if (lid) lid.classList.remove('open', 'slam');
+            if (wrapper) {
+                wrapper.classList.remove('reject');
+                wrapper.classList.add('idle');
+            }
+        }, 800);
+    }
+
+    function updateUseless() {
+        state.useless++;
+        const valEl = document.getElementById('useless-value');
+        const lvlEl = document.getElementById('useless-level');
+        if (!valEl || !lvlEl) return;
+
+        valEl.textContent = state.useless + '%';
+
+        /* Glitchy above 100% */
+        if (state.useless > 100) {
+            valEl.classList.add('glitch');
+        } else {
+            valEl.classList.remove('glitch');
+        }
+
+        const lvl = CONFIG.USELESS_LEVELS.find(l => state.useless >= l.min);
+        lvlEl.textContent = lvl ? 'LEVEL: ' + lvl.label : '';
+    }
+
+    function showMilestone() {
+        setTimeout(() => {
+            const overlay = document.getElementById('win-overlay');
+            if (!overlay) return;
+            document.getElementById('win-score-val').textContent = state.score + ' / ' + state.score;
+            document.getElementById('win-subtitle').textContent = pickMessage([
+                'You have achieved absolutely nothing.',
+                'A milestone. A completely pointless milestone.',
+                'The park is proud. The planet is confused.',
+                'Level achieved. Level of what? Nobody knows.',
+                'Another 10 pieces of fictional garbage gone.'
+            ], 'milestone');
+            overlay.classList.add('show');
+            spawnWinParticles();
+        }, 500);
+    }
+
+    function showMetaToast() {
+        const toast = document.getElementById('meta-toast');
+        if (!toast) return;
+        toast.textContent = pickMessage(CONFIG.META_MESSAGES, 'meta');
+        toast.classList.add('show');
+        clearTimeout(toast._timer);
+        toast._timer = setTimeout(() => toast.classList.remove('show'), 4500);
+    }
+
+    /* ============================================
+       GAME INITIALIZATION
+       ============================================ */
+    function initGame() {
+        /* Clear state */
+        state.score = 0;
+        state.useless = 0;
+        state.lastPicks = {};
+        state.isGameActive = true;
+        state.trashItems = [];
+        clearInterval(state.trashInterval);
+        clearInterval(state.metaInterval);
+        clearTimeout(state.metaStartTimer);
+
+        /* Clear container */
+        container.innerHTML = '';
+
+        /* Build scene */
+        buildScene();
+        buildTrashCan();
+        buildScoreHud();
+        buildUselessHud();
+        buildThankYouPopup();
+        buildMetaToast();
+        buildWinOverlay();
+
+        /* Start spawning */
+        state.trashInterval = setInterval(spawnTrash, CONFIG.SPAWN_INTERVAL);
+
+        /* Self-aware meta messages (non-blocking) */
+        state.metaStartTimer = setTimeout(showMetaToast, 7000);
+        state.metaInterval = setInterval(showMetaToast, 16000 + Math.random() * 9000);
+
+        /* Initial trash */
+        for (let i = 0; i < 3; i++) {
+            setTimeout(spawnTrash, i * 300);
+        }
+    }
+
+    /* ============================================
+       BUTTON EVENT LISTENERS
+       ============================================ */
+    newGameBtn.addEventListener('click', () => {
+        if (state.score > 0 && state.isGameActive) {
+            if (!confirm('Restart your cycle of uselessness?')) return;
+        }
+        initGame();
+    });
+
+    addTrashBtn.addEventListener('click', () => {
+        for (let i = 0; i < 3; i++) {
+            setTimeout(spawnTrash, i * 200);
+        }
+    });
+
+    /* ============================================
+       START
+       ============================================ */
+    initGame();
+    </script>
+</body>
+</html>
